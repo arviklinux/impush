@@ -24,6 +24,7 @@ date:		2017.03.07
 #include <unistd.h>
 #include <net/if.h>
 #include <sys/ioctl.h>
+#include <unistd.h>
 
 
 #define CURRENT_VER 1
@@ -90,7 +91,7 @@ struct imclib_s
 	char sipstr[24];
 	uint32_t n_sip;
 	int imloopcount;
-	int imloopcontinue;
+	int imloopcontinue; //消息发送时间间隔
 };
 
 

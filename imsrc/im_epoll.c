@@ -48,7 +48,7 @@ ngx_int_t im_epoll_add_connection(impush_conn_t *c)
 {
 	struct epoll_event ee;
 
-	ee.events = EPOLLIN|EPOLLET|EPOLLRDHUP; //不关注写事件
+	ee.events = EPOLLIN|EPOLLRDHUP; //不关注写事件,默认使用水平触发EPOLLLT
 	ee.data.ptr = (void *) c;
 
 	if(epoll_ctl(imepoll.epfd, EPOLL_CTL_ADD, c->fd, &ee) == -1)

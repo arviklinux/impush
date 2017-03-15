@@ -47,7 +47,7 @@ int main(int argc, char *argv[])
 		printf("-i :	the unique info str for this dev, 8Bytes!, eg:acfb61gz, default: use eth0 mac for info!\n");
 		printf("-m :	push the message to server, eg. hello world\n");
 		printf("-c :	continue send message times, -1 means forever, 0 means no send, >0 means n times, deault: 1\n");
-		printf("-t :	push message time interval, default: 10\n");
+		printf("-t :	push message max time interval (s), default: 1\n");
 		return -1;
 	}
 
@@ -127,3 +127,4 @@ int main(int argc, char *argv[])
 	close(imc.imfd);
 	return 0;
 }
+

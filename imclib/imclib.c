@@ -64,6 +64,7 @@ int nob_write(int fd, char *buf, size_t len, int timeout)
 {
 	int ret=-1;
 	int nsend = 0;
+	int i = timeout * 5;  //200ms重试一次
 
 	while(nsend < len)
 	{
@@ -83,7 +84,7 @@ int nob_write(int fd, char *buf, size_t len, int timeout)
 			else if(EWOULDBLOCK == errno || EAGAIN== errno)//连接正常，但发送缓冲区没有空间，等待下一次发
 			{
 				if(timeout-- < 0)
-					sleep(1);
+					usleep(200000);
 					continue;
 			}
 			else  //出错
@@ -97,6 +98,7 @@ int nob_write(int fd, char *buf, size_t len, int timeout)
 int nob_read(int fd, char *buf, size_t len, int timeout)
 {
 	int ret = -1;
+	int i = timeout * 5;  //200ms重试一次
 
 	do
 	{
@@ -108,7 +110,8 @@ int nob_read(int fd, char *buf, size_t len, int timeout)
 			if(EINTR == errno || EWOULDBLOCK == errno || EAGAIN== errno) 
 			{
 				ret = -2; //超时
-				sleep(1); 
+				//sleep(1);
+				usleep(200000); 
 			}
 			else 
 				ret = -1;
@@ -412,33 +415,36 @@ int im_readcall(imclib_t *imc)
 	int16_t msglen;
 	imcb imspushcb = imc->cb;
 
-	memset(buf, 0, 8);
-	ret = nob_read(imc->imfd, buf, 8, imc->rtt);
-	if(ret <= 0)
-		return ret;
-
-	if(im->ver != CURRENT_VER)
-		return -2;
-
-	msglen = ntohs(im->len);
-	if(msglen != 0)
+	while(1) //有消息则一直处理
 	{
-		if(nob_read(imc->imfd, msg, msglen, 1 ) <= 0)
+		memset(buf, 0, 8);
+		ret = nob_read(imc->imfd, buf, 8, imc->rtt);
+		if(ret <= 0)
 			return ret;
-	}
 
-	imc->lasttime = time(NULL);
-	switch(im->type)
-	{
-		case IMPUSH_SPUSH:
-			if(imspushcb != NULL)
-				imspushcb(msg, msglen);
+		if(im->ver != CURRENT_VER)
+			return -2;
 
-		break;
-		case IMPUSH_ALIVE:  //处理服务器回复的保活包，一般来说记录时间，
-		break;
-		default:
+		msglen = ntohs(im->len);
+		if(msglen != 0)
+		{
+			if(nob_read(imc->imfd, msg, msglen, 1 ) <= 0)
+				return ret;
+		}
+
+		imc->lasttime = time(NULL);
+		switch(im->type)
+		{
+			case IMPUSH_SPUSH:
+				if(imspushcb != NULL)
+					imspushcb(msg, msglen);
+
 			break;
+			case IMPUSH_ALIVE:  //处理服务器回复的保活包，一般来说记录时间，
+			break;
+			default:
+				break;
+		}
 	}
 
 	return 1;
@@ -449,30 +455,37 @@ int im_aliveloop(imclib_t *imc)
 {
 	int ret = 0;
 	immsglist_t *p = imc->msglist, *p1;
-	time_t currenttime;
+	time_t currenttime, tmptime;
 	uint8_t buf[1024];
 	impush_header_t *im = (impush_header_t *)buf;
 	int imloopcont=0;
+	int continue_val = imc->imloopcontinue;
+	//int timesecond=0;
 
 	c_imdefault_header(im);
 	im->type = 9;
 
-	currenttime = time(NULL);
+	tmptime = currenttime = time(NULL);
 	do
 	{
-		//周期执行用户自定义函数
-		if(imc->imloop != NULL && imloopcont++ >= imc->imloopcount)
-		{
-			imloopcont = 0;
-			if(imc->imloopcontinue>0)
+		//每秒周期执行用户自定义函数
+		//if(timesecond++ >= 2) 
+		//{
+			//timesecond = 0;
+			if(imc->imloop != NULL && imloopcont++ >= imc->imloopcount)
 			{
-				imc->imloopcontinue--;
-				imc->imloop(imc);
+				imloopcont = 0;
+				if(continue_val>0)
+				{
+					continue_val--;
+					imc->imloop(imc);
+				}
+				else if(continue_val<0)
+					imc->imloop(imc);
 			}
-			else if(imc->imloopcontinue<0)
-				imc->imloop(imc);
-		}
+		//}
 
+		//每次驱动都检查有无消息需要上传
 		p = imc->msglist;
 		while(p != NULL)
 		{
@@ -515,13 +528,13 @@ int im_aliveloop(imclib_t *imc)
 			nob_write(imc->imfd, buf, 8, imc->rtt);	
 		}
 
-		//sleep(1);  用读一秒钟替代延时1秒
-		im_readcall(imc);
+		im_readcall(imc); // 1s驱动一次
+		//usleep(500000); //500ms驱动一次
 	}
 	while(imc->run);
 
 	//exit
-	return -1;
+	return 0;
 }
 
 

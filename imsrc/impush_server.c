@@ -27,7 +27,7 @@ void signalkill_handle(int sign)
 
 
 //this is server!
-int main()
+int main(int argc, char *argv[])
 {
 	int listenfd, epfd, connfd;
 	socklen_t client;
@@ -55,7 +55,7 @@ int main()
 
 	ngx_memzero(&serveraddr, sizeof(serveraddr));
 	serveraddr.sin_family = AF_INET;
-	serveraddr.sin_addr.s_addr = inet_addr("192.168.174.139");//htonl(INADDR_ANY); //inet_addr("42.96.130.249");
+	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY); //inet_addr("42.96.130.249");
 	serveraddr.sin_port = htons(5200);
 
 	if(bind(listenfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
@@ -80,9 +80,12 @@ int main()
 	listen_srv_c.accept_handle = imconn_accept;
 	listen_srv_c.imread = impush_read_data;
 
-
 	if(im_epoll_init() != NGX_OK)
+	{
+		printf("init empoll module failed\n");
+		close(listenfd);
 		return -1;
+	}
 
 	im_epoll_add_connection(&listen_srv_c);
 	

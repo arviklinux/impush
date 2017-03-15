@@ -16,10 +16,10 @@ date:		2017.03.07
 #define IMPUSH_ALIVE_TIMEOUT   60
 
 //im msg type
-#define	IMPUSH_SERACK	0
-#define IMPUSH_CLIACK	1
+//#define	IMPUSH_SERACK	0
+//#define IMPUSH_CLIACK	1
 #define IMPUSH_SIGN		3
-#define IMPUSH_ACTIVATE	4
+//#define IMPUSH_ACTIVATE	4
 #define IMPUSH_LOGIN	5
 #define IMPUSH_LOGOUT	7
 #define IMPUSH_ALIVE	9

@@ -20,7 +20,7 @@ server_status_t *p_imserver = &imserver; //服务器端状态，可由此查看�
 //extern server_status_t *p_imserver;
 
 //队列中按照优先级从高到低排列（值越小优先级越高）
-ngx_queue_t hooksign_l, hooklogin_l, hookalive_l, hookcpush_l, hooklogout_l;
+ngx_queue_t hooksign_l, hooklogin_l, hookalive_l, hookcpush_l, hooklogout_l, hookspush_l;
 
 
 impush_msg_t *im_publish_head = NULL;
@@ -35,6 +35,7 @@ ngx_int_t init_env()
 	ngx_queue_init(&hookalive_l);
 	ngx_queue_init(&hookcpush_l);
 	ngx_queue_init(&hooklogout_l);
+	ngx_queue_init(&hookspush_l);
 }
 
 ngx_int_t add_hook(ngx_queue_t *head, im_hook_t *r)
@@ -89,8 +90,13 @@ ngx_int_t hookregister(im_hook_t *r, int type)
 			ret = add_hook(&hooklogout_l, r);
 		break;
 
+		case IMPUSH_SPUSH:
+			ret = add_hook(&hookspush_l, r);
+		break;
+
 		default:
 			ret = NGX_ERROR;
+		break;
 	}
 
 	return ret;
@@ -267,7 +273,7 @@ ngx_int_t impush_timeout_clear()
 static inline void imdefault_header(impush_header_t *ih, impush_header_t *oh)
 {
 	oh->ver = CURRENT_VER;
-	oh->type = 0; 
+	oh->type = ih->type; 
 	oh->warn = 0; 
 	oh->reserve = 0; 
 	oh->len = htons(0); 
@@ -280,7 +286,7 @@ int imrespone_immediately(int fd, int16_t n_id, uint8_t warn_type)
 	impush_header_t imh;
 	memset(&imh, 0, sizeof(impush_header_t));
 	imh.ver = CURRENT_VER;
-	imh.type = 0;
+	//imh.type = 0;
 	imh.warn = warn_type; 
 	imh.reserve = 0;
 	imh.len = htons(0);
@@ -289,6 +295,7 @@ int imrespone_immediately(int fd, int16_t n_id, uint8_t warn_type)
 	return write(fd, (void *)&imh, sizeof(impush_header_t) );
 }
 
+/*
 ngx_int_t impush_serverack(impush_conn_t *c)
 {
 	//更新时间
@@ -302,7 +309,7 @@ ngx_int_t impush_clientack(impush_conn_t *c)
 
 	return NGX_OK;
 }
-
+*/
 
 ngx_int_t impush_login(impush_conn_t *c)
 {
@@ -453,12 +460,14 @@ ngx_int_t impush_alive(impush_conn_t *c)
 	return NGX_OK;	
 }
 
-/*
+
+//该函数用来处理，服务器推送消息后，客户端的返回信息，该消息不需要再次回写数据了
+
 ngx_int_t impush_spush(impush_conn_t *c)
 {
-
+	return NGX_OK;	
 }
-*/
+
 
 ngx_int_t impush_cpush(impush_conn_t *c)
 {
@@ -549,10 +558,16 @@ static im_hook_t imcpush_hookss =
 	.priorty = 0,
 };
 
+static im_hook_t imspush_hookss =
+{
+	.hook = impush_spush,
+	.priorty = 0,
+};
+
 
 ngx_int_t init_imhook()
 {
-	ngx_int_t ret;
+	ngx_int_t ret=0;
 
 	init_env();
 
@@ -571,6 +586,9 @@ ngx_int_t init_imhook()
 
 	//register cpush
 	ret |= hookregister(&imcpush_hookss, IMPUSH_CPUSH);
+
+	//register spush
+	ret |= hookregister(&imspush_hookss, IMPUSH_SPUSH);
 
 	return ret;
 }

@@ -74,14 +74,17 @@ struct impush_cb_s
 struct imclib_s
 {
 	int8_t info[8]; //设备信息
-	int imfd; //
+	int imfd; //客户端套接字描述符
 	int run; //消息循环标志
 	uint32_t id; //设备id, 本地字节序
 	uint32_t heartbeat; //心跳时间
+	uint32_t rto;  // 超时重连机制， rto需要大于heartbeat
+	time_t lasttime; //最后一次客户端接收到服务器任何消息的时间戳
 	uint16_t port; //服务器端口号
 	int16_t maxlen; //消息最长大小
 	uint32_t rtt; //读写套接字超时时间
 	immsglist_t *msglist; //消息推送链表
+	int msglen; //消息推送链表长度（最多存储的消息条数）
 	imcb cb; //消息回调函数
 	f_imloop imloop;
 	char sipstr[24];

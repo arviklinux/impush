@@ -60,7 +60,7 @@ void setnonblocking(int sock)
         }
 }
 
-int nob_write(int fd, char *buf, size_t len, uint32_t timeout)
+int nob_write(int fd, char *buf, size_t len, int timeout)
 {
 	int ret=-1;
 	int nsend = 0;
@@ -94,7 +94,7 @@ int nob_write(int fd, char *buf, size_t len, uint32_t timeout)
 	return ret;
 }
 
-int nob_read(int fd, char *buf, size_t len, uint32_t timeout)
+int nob_read(int fd, char *buf, size_t len, int timeout)
 {
 	int ret = -1;
 
@@ -118,11 +118,22 @@ int nob_read(int fd, char *buf, size_t len, uint32_t timeout)
 	return ret;
 }
 
+int setsocktimeout(int sock, uint32_t timeout) //适用于阻塞套接字
+{
+	struct timeval t1;
+
+	t1.tv_sec = timeout;
+	t1.tv_usec = 0;
+	setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&t1, sizeof(t1));
+
+	return 0;
+}
+
 
 static inline void c_imdefault_header(impush_header_t *oh)
 {
 	oh->ver = CURRENT_VER;
-	oh->type = 0; 
+	//oh->type = 0; 
 	oh->warn = 0; 
 	oh->reserve = 0; 
 	oh->len = htons(0); 
@@ -145,7 +156,7 @@ int c_imsign(int fd, uint8_t *info, uint32_t *n_getid, uint32_t rtt)
 	int ret=0;
 
 	c_imdefault_header(im);
-	im->type = 3;
+	im->type = IMPUSH_SIGN;
 	im->len = htons(8);
 	memcpy(p, info, 8);
 	//write(fd, buf, 16);
@@ -192,7 +203,7 @@ int c_imlogin(int fd, uint32_t n_id, uint32_t rtt)
 	int ret=0;
 
 	c_imdefault_header(im);
-	im->type = 5;
+	im->type = IMPUSH_LOGIN;
 	im->len = htons(4);
 	
 	*(uint32_t *)p = htonl(n_id);
@@ -232,7 +243,7 @@ int c_imalive(int fd, uint32_t rtt)
 
 	printf("client alive...\n");
 	c_imdefault_header(im);
-	im->type = 9;
+	im->type = IMPUSH_ALIVE;
 
 	//write(fd, buf, 8);
 	ret = nob_write(fd, buf, 8, rtt);
@@ -270,6 +281,7 @@ int im_connect(imclib_t *imc)
 	int cfd;
 	struct sockaddr_in serveraddr;
 	uint32_t rtt = imc->rtt;
+	int ret=0;
 
 	//memcpy(imc->info, info, 8);
 	cfd = socket(AF_INET, SOCK_STREAM, 0); //异步socket
@@ -285,20 +297,34 @@ int im_connect(imclib_t *imc)
 	if(connect(cfd, (struct sockaddr *)&serveraddr, sizeof(serveraddr) ) < 0)
 	{
 		printf("connect server failed, errno:%d\n", errno);
-		return -2;
+		ret = -2;
+		goto exit;
 	}
 
 	setnonblocking(cfd);
 	if(c_imsign(cfd, imc->info, &(imc->id), rtt) != 0)
-		return -3;
+	{
+		ret = -3;
+		goto exit;
+	}
 	
 	if(c_imlogin(cfd, imc->id, rtt) != 0 )
-		return -4;
+	{
+		ret = -4;
+		goto exit;
+	}
 
+/*
 	if(c_imalive(cfd, rtt) != 0)
-		return -5;
-
+	{
+		ret = -5;
+		goto exit;
+	}
+*/
 	return 0;
+exit:
+	close(imc->imfd);
+	return ret;
 }
 
 int im_addmsg(int8_t *buf, int16_t len, int8_t method, imclib_t *imc)
@@ -307,6 +333,7 @@ int im_addmsg(int8_t *buf, int16_t len, int8_t method, imclib_t *imc)
 	int8_t *b;
 	impush_header_t *im;
 	static uint16_t s_id;
+	int size=0;
 
 	
 	if(len > imc->maxlen)
@@ -314,19 +341,19 @@ int im_addmsg(int8_t *buf, int16_t len, int8_t method, imclib_t *imc)
 
 	p = (immsglist_t *)malloc(sizeof(immsglist_t));
 	if(p == NULL)
-		return -1;
+		return -2;
 	
 	b = malloc(len + sizeof(impush_header_t) );
 	if(b == NULL)
 	{
 		free(p);
-		return -2;
+		return -3;
 	}
 
 	im = (impush_header_t *)b;
 	memcpy(b + sizeof(impush_header_t), buf, len);
 	im->ver = CURRENT_VER;
-	im->type = 11; 
+	im->type = IMPUSH_CPUSH; 
 	im->warn = method; 
 	im->reserve = 0; 
 	im->len = htons(len); 
@@ -342,7 +369,13 @@ int im_addmsg(int8_t *buf, int16_t len, int8_t method, imclib_t *imc)
 	}
 	p1 = imc->msglist;
 	while(p1->next != NULL)
+	{
 		p1 = p1->next;
+		size++;
+	}
+
+	if(size > imc->msglen)
+		return -5;
 
 	p1->next = p;
 	
@@ -375,7 +408,7 @@ int im_readcall(imclib_t *imc)
 	static int8_t buf[2000];
 	impush_header_t *im = (impush_header_t *)buf;
 	int8_t *msg = buf + 8;
-	int ret;
+	int ret=-1;
 	int16_t msglen;
 	imcb imspushcb = imc->cb;
 
@@ -394,16 +427,16 @@ int im_readcall(imclib_t *imc)
 			return ret;
 	}
 
+	imc->lasttime = time(NULL);
 	switch(im->type)
 	{
 		case IMPUSH_SPUSH:
 			if(imspushcb != NULL)
-			{
 				imspushcb(msg, msglen);
-			}
 
 		break;
-
+		case IMPUSH_ALIVE:  //处理服务器回复的保活包，一般来说记录时间，
+		break;
 		default:
 			break;
 	}
@@ -416,7 +449,7 @@ int im_aliveloop(imclib_t *imc)
 {
 	int ret = 0;
 	immsglist_t *p = imc->msglist, *p1;
-	time_t lasttime, currenttime;
+	time_t currenttime;
 	uint8_t buf[1024];
 	impush_header_t *im = (impush_header_t *)buf;
 	int imloopcont=0;
@@ -424,7 +457,7 @@ int im_aliveloop(imclib_t *imc)
 	c_imdefault_header(im);
 	im->type = 9;
 
-	lasttime = currenttime = time(NULL);
+	currenttime = time(NULL);
 	do
 	{
 		//周期执行用户自定义函数
@@ -448,7 +481,6 @@ int im_aliveloop(imclib_t *imc)
 				break;
 			p = p->next;
 
-			lasttime = time(NULL);
 		}
 
 		p = imc->msglist;
@@ -461,17 +493,26 @@ int im_aliveloop(imclib_t *imc)
 		}
 		imc->msglist = NULL;
 
-		currenttime = time(NULL);   //心跳机制，距离最近一次客户端向服务器发送的任何消息时长超过heartbeat时长则发送心跳包
-		if(currenttime - lasttime >= imc->heartbeat)
+		//心跳机制，距离最近一次服务器向客户端 发送/回复 任何消息的时长超过heartbeat时长则发送心跳包
+		currenttime = time(NULL);
+
+		if(currenttime - imc->lasttime > imc->rto)  //重置链接
 		{
-			lasttime = currenttime;
-			//heartbeat
+			printf("timeout ! close socket and try connect server...\n");
+			close(imc->imfd);
+			printf("connect server...\n");
+			while(im_connect(imc) != 0 ) //成功后至少要一次心跳
+			{
+				sleep(2);
+				//printf("connect server...\n");
+			}
+			imc->lasttime = time(NULL);
+		}
+
+		if(currenttime - imc->lasttime > imc->heartbeat)
+		{
 			im->session_id = s_id++;
-			//write(fd, buf, 8);
-			ret = nob_write(imc->imfd, buf, 8, imc->rtt);
-			if(ret <= 0)
-				return -1;
-			printf("send alive...\n");
+			nob_write(imc->imfd, buf, 8, imc->rtt);	
 		}
 
 		//sleep(1);  用读一秒钟替代延时1秒
@@ -493,9 +534,12 @@ void init_imc(imclib_t *imc)
 	imc->rtt = 1;
 	imc->cb = NULL;
 	imc->msglist = NULL;
+	imc->msglen = 10;
 	imc->run = 1;
 	imc->imloop = NULL;
 	imc->imloopcount = 10;
 	imc->imloopcontinue = 1;
+	imc->lasttime = time(NULL);
+	imc->rto = imc->heartbeat + 15;
 }
 

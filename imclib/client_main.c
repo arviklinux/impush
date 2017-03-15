@@ -78,6 +78,7 @@ int main(int argc, char *argv[])
 			case 'b':
 				//printf("beat: %s\n", optarg);
 				imc.heartbeat = atoi(optarg);
+				imc.rto = imc.heartbeat + 15;
 				//sscanf(optarg, "%u", &(imc.heartbeat));
 			break;
 			case 'i':
@@ -122,5 +123,7 @@ int main(int argc, char *argv[])
 
 	im_aliveloop(&imc);
 
+
+	close(imc.imfd);
 	return 0;
 }

@@ -15,7 +15,7 @@ date:		2017.03.07
 extern server_status_t *p_imserver; //server 状态
 
 static struct im_epoll_s imepoll; //epoll事件驱动机制
-extern ngx_queue_t hooksign_l, hooklogin_l, hookalive_l, hookcpush_l, hooklogout_l;
+extern ngx_queue_t hooksign_l, hooklogin_l, hookalive_l, hookcpush_l, hooklogout_l, hookspush_l;
 
 ngx_int_t im_epoll_init()
 {
@@ -24,7 +24,9 @@ ngx_int_t im_epoll_init()
 	ak_event_timer_init();
 
 	if(init_imhook() != NGX_OK)
+	{
 		return NGX_ERROR;
+	}
 
 	ngx_memzero(&imepoll, sizeof(imepoll));
 	imepoll.epfd = epoll_create(MAX_EPOLL_CONNECTION);
@@ -360,22 +362,10 @@ ngx_int_t impush_handle_data(impush_conn_t *c)
 	c->chatstatus = IMCHAT_HANDLING;
 	switch(h->type)
 	{
-		//case IMPUSH_SERACK:
-		//	impush_serverack(c);
-		//break;
-
-		case IMPUSH_CLIACK:
-			ret = impush_clientack(c);
-		break;
-
 		case IMPUSH_SIGN:
 			//ret = impush_sign(c);
 			ret = runhook_queue(&hooksign_l, c);
 		break;
-
-		//case IMPUSH_ACTIVATE:
-		//	impush_activate(c);
-		//break;
 
 		case IMPUSH_LOGIN:
 			//ret = impush_login(c);
@@ -392,13 +382,16 @@ ngx_int_t impush_handle_data(impush_conn_t *c)
 			ret = runhook_queue(&hookalive_l, c);
 		break;
 
-		//case IMPUSH_SPUSH:
-		//	impush_spush(c);
-		//break;
+		case IMPUSH_SPUSH:  //it is client respone data, ignore it!
+			ret = runhook_queue(&hookspush_l, c);
+		break;
 
 		case IMPUSH_CPUSH:
 			//ret = impush_cpush(c);
 			ret = runhook_queue(&hookcpush_l, c);
+		break;
+
+		default:
 		break;
 	}
 
@@ -407,7 +400,8 @@ ngx_int_t impush_handle_data(impush_conn_t *c)
 
 	c->chatstatus = IMCHAT_WRITING;
 	//write back
-	if( (h->type != IMPUSH_SERACK) && (h->type != IMPUSH_CLIACK) )
+	//if( (h->type != IMPUSH_SERACK) && (h->type != IMPUSH_CLIACK) )
+	if(h->type % 2) //基数代表是处理客户端消息
 		write(c->fd, c->out->pos, c->out->last - c->out->pos);
 
 	c->chatting = 0;
